@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fractal Explorer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a0a; color: #e0e0e0; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+#main-canvas { display: block; cursor: crosshair; }
+#overlay { position: absolute; top: 0; left: 0; pointer-events: none; }
+#selection-box {
+  position: absolute; border: 2px solid rgba(255,255,255,0.8);
+  background: rgba(255,255,255,0.08); display: none; pointer-events: none;
+  box-shadow: 0 0 12px rgba(255,255,255,0.3);
+}
+#panel {
+  position: absolute; top: 0; right: 0; width: 280px; height: 100vh;
+  background: rgba(15,15,20,0.92); backdrop-filter: blur(12px);
+  border-left: 1px solid rgba(255,255,255,0.1);
+  overflow-y: auto; padding: 16px; transition: transform 0.3s ease;
+  z-index: 100; font-size: 13px;
+}
+#panel.hidden { transform: translateX(100%); }
+#toggle-panel {
+  position: absolute; top: 10px; right: 10px; z-index: 101;
+  background: rgba(30,30,40,0.85); border: 1px solid rgba(255,255,255,0.15);
+  color: #e0e0e0; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; backdrop-filter: blur(8px);
+}
+#toggle-panel:hover { background: rgba(60,60,80,0.9); }
+.section { margin-bottom: 14px; }
+.section-title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+  color: #888; margin-bottom: 8px; font-weight: 600;
+}
+label { display: block; margin-bottom: 6px; font-size: 12px; color: #bbb; }
+select, input[type="number"] {
+  width: 100%; padding: 5px 8px; background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 4px;
+  color: #e0e0e0; font-size: 12px; margin-bottom: 8px;
+}
+select:focus, input:focus { outline: none; border-color: rgba(100,140,255,0.5); }
+input[type="range"] { width: 100%; margin: 4px 0 8px; accent-color: #6090ff; }
+.range-row { display: flex; align-items: center; gap: 8px; }
+.range-row input[type="range"] { flex: 1; }
+.range-val { font-size: 11px; color: #999; min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+button {
+  padding: 6px 12px; background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15); border-radius: 4px;
+  color: #ddd; cursor: pointer; font-size: 12px; transition: background 0.15s;
+}
+button:hover { background: rgba(255,255,255,0.15); }
+.btn-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.btn-row button { flex: 1; min-width: 0; }
+#info-bar {
+  position: absolute; bottom: 0; left: 0; right: 0; padding: 6px 14px;
+  background: rgba(10,10,15,0.85); backdrop-filter: blur(8px);
+  border-top: 1px solid rgba(255,255,255,0.08); font-size: 11px;
+  color: #888; display: flex; gap: 16px; z-index: 50;
+  font-variant-numeric: tabular-nums;
+}
+#info-bar span { white-space: nowrap; }
+#info-bar .val { color: #bbb; }
+.checkbox-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.checkbox-row input { accent-color: #6090ff; }
+.checkbox-row label { margin: 0; }
+#help-overlay {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.85); z-index: 200; display: flex;
+  align-items: center; justify-content: center;
+}
+#help-overlay.hidden { display: none; }
+#help-box {
+  background: #1a1a24; border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 12px; padding: 28px 32px; max-width: 520px; max-height: 80vh;
+  overflow-y: auto; line-height: 1.6;
+}
+#help-box h2 { margin-bottom: 12px; color: #e0e0e0; font-size: 18px; }
+#help-box h3 { margin: 12px 0 6px; color: #999; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
+#help-box p, #help-box li { font-size: 13px; color: #bbb; }
+#help-box ul { padding-left: 18px; }
+#help-box kbd {
+  background: rgba(255,255,255,0.1); padding: 1px 6px; border-radius: 3px;
+  font-family: monospace; font-size: 12px; border: 1px solid rgba(255,255,255,0.15);
+}
+.preset-btn {
+  padding: 4px 8px; font-size: 11px; margin: 2px;
+}
+#presets-grid { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<canvas id="main-canvas"></canvas>
+<div id="selection-box"></div>
+
+<button id="toggle-panel">Controls</button>
+
+<div id="panel">
+  <div class="section">
+    <div class="section-title">Fractal Type</div>
+    <select id="fractal-type">
+      <option value="0">Mandelbrot</option>
+      <option value="1">Julia Set</option>
+      <option value="2">Burning Ship</option>
+      <option value="3">Tricorn / Mandelbar</option>
+      <option value="4">Celtic</option>
+      <option value="5">Buffalo</option>
+      <option value="6">Perpendicular Mandelbrot</option>
+      <option value="7">Multibrot (Power N)</option>
+    </select>
+    <div id="power-row" style="display:none">
+      <label>Power: <span id="power-val">3.0</span></label>
+      <input type="range" id="power" min="2" max="8" step="0.1" value="3">
+    </div>
+    <div id="julia-params" style="display:none">
+      <label>Julia Re(c)</label>
+      <input type="number" id="julia-re" value="-0.7269" step="0.01">
+      <label>Julia Im(c)</label>
+      <input type="number" id="julia-im" value="0.1889" step="0.01">
+      <div class="checkbox-row">
+        <input type="checkbox" id="julia-pick">
+        <label for="julia-pick">Click Mandelbrot to pick c</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Iterations</div>
+    <div class="range-row">
+      <input type="range" id="max-iter" min="50" max="4000" step="10" value="300">
+      <span class="range-val" id="max-iter-val">300</span>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="auto-iter" checked>
+      <label for="auto-iter">Auto-increase with zoom</label>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Color</div>
+    <select id="palette">
+      <option value="0">Ocean Blues</option>
+      <option value="1">Fire</option>
+      <option value="2">Psychedelic</option>
+      <option value="3">Ice</option>
+      <option value="4">Gold &amp; Blue</option>
+      <option value="5">Neon</option>
+      <option value="6">Grayscale</option>
+      <option value="7">Emerald</option>
+      <option value="8">Sunset</option>
+      <option value="9">Vaporwave</option>
+    </select>
+    <label>Palette Period</label>
+    <div class="range-row">
+      <input type="range" id="palette-period" min="4" max="200" step="1" value="32">
+      <span class="range-val" id="palette-period-val">32</span>
+    </div>
+    <label>Palette Offset</label>
+    <div class="range-row">
+      <input type="range" id="palette-offset" min="0" max="1" step="0.005" value="0">
+      <span class="range-val" id="palette-offset-val">0.00</span>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="color-cycle">
+      <label for="color-cycle">Color Cycling</label>
+    </div>
+    <div id="cycle-speed-row" style="display:none">
+      <label>Cycle Speed</label>
+      <div class="range-row">
+        <input type="range" id="cycle-speed" min="0.05" max="3" step="0.05" value="0.5">
+        <span class="range-val" id="cycle-speed-val">0.50</span>
+      </div>
+    </div>
+    <select id="interior-color">
+      <option value="0">Black Interior</option>
+      <option value="1">Dark Blue Interior</option>
+      <option value="2">Dark Red Interior</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Navigation</div>
+    <div class="btn-row">
+      <button id="btn-back" title="Go back">&#9664; Back</button>
+      <button id="btn-home" title="Reset view">&#8962; Home</button>
+    </div>
+    <div class="btn-row">
+      <button id="btn-save">Save PNG</button>
+      <button id="btn-share">Copy URL</button>
+    </div>
+    <button id="btn-help" style="width:100%">Keyboard Shortcuts &amp; Help</button>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Interesting Locations</div>
+    <div id="presets-grid">
+      <button class="preset-btn" data-preset="seahorse">Seahorse Valley</button>
+      <button class="preset-btn" data-preset="elephant">Elephant Valley</button>
+      <button class="preset-btn" data-preset="spiral">Double Spiral</button>
+      <button class="preset-btn" data-preset="mini">Mini Mandelbrot</button>
+      <button class="preset-btn" data-preset="antenna">Antenna</button>
+      <button class="preset-btn" data-preset="tendrils">Tendrils</button>
+      <button class="preset-btn" data-preset="julia1">Julia Star</button>
+      <button class="preset-btn" data-preset="julia2">Julia Dendrite</button>
+      <button class="preset-btn" data-preset="ship1">Burning Ship</button>
+      <button class="preset-btn" data-preset="tricorn1">Tricorn Detail</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Go To Coordinates</div>
+    <label>Real</label>
+    <input type="number" id="goto-re" step="0.0001" value="0">
+    <label>Imaginary</label>
+    <input type="number" id="goto-im" step="0.0001" value="0">
+    <label>Zoom</label>
+    <input type="number" id="goto-zoom" step="0.1" value="1">
+    <button id="btn-goto" style="width:100%;margin-top:4px">Go</button>
+  </div>
+</div>
+
+<div id="info-bar">
+  <span>Center: <span class="val" id="info-re">0</span> + <span class="val" id="info-im">0</span>i</span>
+  <span>Zoom: <span class="val" id="info-zoom">1x</span></span>
+  <span>Iter: <span class="val" id="info-iter">300</span></span>
+  <span>Render: <span class="val" id="info-time">--</span>ms</span>
+  <span>Cursor: <span class="val" id="info-cursor">--</span></span>
+</div>
+
+<div id="help-overlay" class="hidden">
+  <div id="help-box">
+    <h2>Fractal Explorer</h2>
+    <h3>Mouse Controls</h3>
+    <ul>
+      <li><kbd>Scroll</kbd> Zoom in/out toward cursor</li>
+      <li><kbd>Drag</kbd> Draw rectangle, release to zoom into that area</li>
+      <li><kbd>Shift+Drag</kbd> Pan the view</li>
+      <li><kbd>Double-click</kbd> Zoom in 3x at that point</li>
+      <li><kbd>Right-click</kbd> Zoom out 3x</li>
+    </ul>
+    <h3>Keyboard Shortcuts</h3>
+    <ul>
+      <li><kbd>H</kbd> Toggle this help</li>
+      <li><kbd>P</kbd> Toggle control panel</li>
+      <li><kbd>C</kbd> Toggle color cycling</li>
+      <li><kbd>R</kbd> Reset to home view</li>
+      <li><kbd>B</kbd> Go back in history</li>
+      <li><kbd>S</kbd> Save PNG screenshot</li>
+      <li><kbd>+</kbd> / <kbd>-</kbd> Increase / decrease iterations</li>
+      <li><kbd>&#8592;</kbd><kbd>&#8594;</kbd><kbd>&#8593;</kbd><kbd>&#8595;</kbd> Pan the view</li>
+      <li><kbd>[</kbd> / <kbd>]</kbd> Shift palette offset</li>
+      <li><kbd>1</kbd>-<kbd>8</kbd> Switch fractal type</li>
+    </ul>
+    <h3>Tips</h3>
+    <ul>
+      <li>Increase iterations when zoomed deep for more detail.</li>
+      <li>Try color cycling with different palettes for amazing animations.</li>
+      <li>In Julia mode, enable "Click Mandelbrot to pick c" for interactive Julia exploration.</li>
+    </ul>
+    <p style="margin-top:16px;text-align:center">
+      <button onclick="document.getElementById('help-overlay').classList.add('hidden')">Close</button>
+    </p>
+  </div>
+</div>
+
+<script>
+// ===================== SHADER SOURCE =====================
+const vertSrc = `
+attribute vec2 a_pos;
+void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
+`;
+
+const fragSrc = `
+precision highp float;
+
+uniform vec2 u_resolution;
+uniform vec2 u_center;
+uniform float u_zoom;        // width of view in complex plane
+uniform int u_maxIter;
+uniform int u_fractalType;   // 0-7
+uniform float u_power;       // for multibrot
+uniform vec2 u_julia;        // julia c parameter
+uniform int u_palette;
+uniform float u_palettePeriod;
+uniform float u_paletteOffset;
+uniform int u_interiorColor;
+
+const float BAILOUT = 256.0;
+const float LOG2 = 0.6931471805599453;
+
+// Sinusoidal palette: color = a + b*cos(2*pi*(c*t + d))
+vec3 pal(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
+    return a + b * cos(6.283185 * (c * t + d));
+}
+
+vec3 getPaletteColor(float t, int idx) {
+    // 10 palettes
+    if (idx == 0) return pal(t, vec3(0.02,0.02,0.1), vec3(0.5,0.5,0.5), vec3(1.0,1.0,1.0), vec3(0.0,0.1,0.2));      // Ocean
+    if (idx == 1) return pal(t, vec3(0.5,0.1,0.0), vec3(0.5,0.4,0.3), vec3(1.0,0.7,0.4), vec3(0.0,0.05,0.1));       // Fire
+    if (idx == 2) return pal(t, vec3(0.5,0.5,0.5), vec3(0.5,0.5,0.5), vec3(1.0,1.0,1.0), vec3(0.0,0.33,0.67));      // Psychedelic
+    if (idx == 3) return pal(t, vec3(0.6,0.7,0.8), vec3(0.3,0.3,0.4), vec3(1.0,1.0,1.0), vec3(0.0,0.05,0.1));       // Ice
+    if (idx == 4) return pal(t, vec3(0.5,0.5,0.5), vec3(0.5,0.5,0.5), vec3(1.0,0.7,0.4), vec3(0.0,0.15,0.2));       // Gold & Blue
+    if (idx == 5) return pal(t, vec3(0.5,0.5,0.5), vec3(0.5,0.5,0.5), vec3(2.0,1.0,0.0), vec3(0.5,0.2,0.25));       // Neon
+    if (idx == 6) return pal(t, vec3(0.5,0.5,0.5), vec3(0.5,0.5,0.5), vec3(1.0,1.0,1.0), vec3(0.0,0.0,0.0));        // Grayscale
+    if (idx == 7) return pal(t, vec3(0.0,0.3,0.1), vec3(0.4,0.5,0.4), vec3(1.0,1.2,0.8), vec3(0.0,0.25,0.1));       // Emerald
+    if (idx == 8) return pal(t, vec3(0.5,0.3,0.2), vec3(0.5,0.4,0.5), vec3(1.0,0.8,0.6), vec3(0.3,0.1,0.0));        // Sunset
+    if (idx == 9) return pal(t, vec3(0.4,0.2,0.5), vec3(0.5,0.4,0.5), vec3(1.0,1.0,0.5), vec3(0.8,0.3,0.6));        // Vaporwave
+    return vec3(t);
+}
+
+// Complex multiply
+vec2 cmul(vec2 a, vec2 b) { return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
+
+// Complex power (for multibrot with non-integer powers)
+vec2 cpow(vec2 z, float n) {
+    float r = length(z);
+    if (r == 0.0) return vec2(0.0);
+    float theta = atan(z.y, z.x);
+    float rn = pow(r, n);
+    return vec2(rn * cos(n * theta), rn * sin(n * theta));
+}
+
+void main() {
+    vec2 uv = gl_FragCoord.xy;
+    float aspect = u_resolution.x / u_resolution.y;
+
+    // Map pixel to complex plane
+    vec2 c;
+    c.x = u_center.x + (uv.x / u_resolution.x - 0.5) * u_zoom * aspect;
+    c.y = u_center.y + (uv.y / u_resolution.y - 0.5) * u_zoom;
+
+    vec2 z;
+    vec2 param_c;
+
+    // Julia mode: z starts at pixel, c is fixed parameter
+    if (u_fractalType == 1) {
+        z = c;
+        param_c = u_julia;
+    } else {
+        z = vec2(0.0);
+        param_c = c;
+    }
+
+    float n = 0.0;
+    float maxN = float(u_maxIter);
+
+    for (int i = 0; i < 10000; i++) {
+        if (float(i) >= maxN) break;
+        if (dot(z, z) > BAILOUT * BAILOUT) break;
+
+        vec2 z2;
+        if (u_fractalType == 0 || u_fractalType == 1) {
+            // Mandelbrot / Julia: z = z^2 + c
+            z2 = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + param_c;
+        } else if (u_fractalType == 2) {
+            // Burning Ship: z = (|Re(z)| + i|Im(z)|)^2 + c
+            vec2 za = vec2(abs(z.x), abs(z.y));
+            z2 = vec2(za.x*za.x - za.y*za.y, 2.0*za.x*za.y) + param_c;
+        } else if (u_fractalType == 3) {
+            // Tricorn: z = conj(z)^2 + c
+            vec2 zc = vec2(z.x, -z.y);
+            z2 = vec2(zc.x*zc.x - zc.y*zc.y, 2.0*zc.x*zc.y) + param_c;
+        } else if (u_fractalType == 4) {
+            // Celtic: z^2 with |Re(z^2)| + c
+            vec2 zsq = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y);
+            z2 = vec2(abs(zsq.x), zsq.y) + param_c;
+        } else if (u_fractalType == 5) {
+            // Buffalo: abs on both components before squaring
+            vec2 za = vec2(abs(z.x), abs(z.y));
+            vec2 zsq = vec2(za.x*za.x - za.y*za.y, 2.0*za.x*za.y);
+            z2 = vec2(abs(zsq.x), zsq.y) + param_c;
+        } else if (u_fractalType == 6) {
+            // Perpendicular Mandelbrot: z = (|Re(z)| - i*Im(z))^2 + c
+            vec2 zp = vec2(abs(z.x), -z.y);
+            z2 = vec2(zp.x*zp.x - zp.y*zp.y, 2.0*zp.x*zp.y) + param_c;
+        } else if (u_fractalType == 7) {
+            // Multibrot: z = z^power + c
+            z2 = cpow(z, u_power) + param_c;
+        } else {
+            z2 = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + param_c;
+        }
+
+        z = z2;
+        n += 1.0;
+    }
+
+    vec3 color;
+
+    if (n >= maxN) {
+        // Interior
+        if (u_interiorColor == 0) color = vec3(0.0);
+        else if (u_interiorColor == 1) color = vec3(0.0, 0.0, 0.05);
+        else color = vec3(0.05, 0.0, 0.0);
+    } else {
+        // Smooth iteration count
+        float log_zn = log(dot(z, z)) / 2.0;
+        float nu = log(log_zn / LOG2) / LOG2;
+        float smooth_n = n + 1.0 - nu;
+
+        float t = smooth_n / u_palettePeriod + u_paletteOffset;
+        t = fract(t);
+
+        color = getPaletteColor(t, u_palette);
+        color = clamp(color, 0.0, 1.0);
+    }
+
+    gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+// ===================== WEBGL SETUP =====================
+const canvas = document.getElementById('main-canvas');
+const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
+if (!gl) { document.body.innerHTML = '<h1 style="color:white;padding:40px">WebGL not supported</h1>'; }
+
+function compileShader(src, type) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        console.error(gl.getShaderInfoLog(s));
+        return null;
+    }
+    return s;
+}
+
+const vs = compileShader(vertSrc, gl.VERTEX_SHADER);
+const fs = compileShader(fragSrc, gl.FRAGMENT_SHADER);
+const prog = gl.createProgram();
+gl.attachShader(prog, vs);
+gl.attachShader(prog, fs);
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+// Full-screen quad
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+const aPos = gl.getAttribLocation(prog, 'a_pos');
+gl.enableVertexAttribArray(aPos);
+gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+// Uniforms
+const U = {};
+['u_resolution','u_center','u_zoom','u_maxIter','u_fractalType','u_power',
+ 'u_julia','u_palette','u_palettePeriod','u_paletteOffset','u_interiorColor'
+].forEach(name => { U[name] = gl.getUniformLocation(prog, name); });
+
+// ===================== STATE =====================
+const state = {
+    centerX: -0.5, centerY: 0.0,
+    zoom: 3.0,  // width of view in complex plane
+    maxIter: 300,
+    fractalType: 0,
+    power: 3.0,
+    juliaRe: -0.7269, juliaIm: 0.1889,
+    palette: 0,
+    palettePeriod: 32,
+    paletteOffset: 0,
+    interiorColor: 0,
+    colorCycling: false,
+    cycleSpeed: 0.5,
+    autoIter: true,
+};
+
+let history = [];
+let cycleTime = 0;
+let needsRender = true;
+let lastRenderTime = 0;
+
+// ===================== PRESETS =====================
+const presets = {
+    seahorse: { centerX: -0.747, centerY: 0.1, zoom: 0.01, type: 0, iter: 500 },
+    elephant: { centerX: 0.28, centerY: 0.008, zoom: 0.02, type: 0, iter: 500 },
+    spiral: { centerX: -0.7463, centerY: 0.1102, zoom: 0.002, type: 0, iter: 800 },
+    mini: { centerX: -1.768, centerY: 0.001, zoom: 0.01, type: 0, iter: 600 },
+    antenna: { centerX: -1.4015, centerY: 0.0, zoom: 0.02, type: 0, iter: 500 },
+    tendrils: { centerX: -0.235125, centerY: 0.827215, zoom: 0.0004, type: 0, iter: 1000 },
+    julia1: { centerX: 0.0, centerY: 0.0, zoom: 3.2, type: 1, juliaRe: -0.4, juliaIm: 0.6, iter: 300 },
+    julia2: { centerX: 0.0, centerY: 0.0, zoom: 3.2, type: 1, juliaRe: 0.285, juliaIm: 0.01, iter: 400 },
+    ship1: { centerX: -1.762, centerY: -0.028, zoom: 0.04, type: 2, iter: 500 },
+    tricorn1: { centerX: -0.4, centerY: 0.6, zoom: 0.5, type: 3, iter: 400 },
+};
+
+// ===================== RESIZE =====================
+function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    needsRender = true;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ===================== RENDER =====================
+function render() {
+    const t0 = performance.now();
+    gl.uniform2f(U.u_resolution, canvas.width, canvas.height);
+    gl.uniform2f(U.u_center, state.centerX, state.centerY);
+    gl.uniform1f(U.u_zoom, state.zoom);
+    gl.uniform1i(U.u_maxIter, state.maxIter);
+    gl.uniform1i(U.u_fractalType, state.fractalType);
+    gl.uniform1f(U.u_power, state.power);
+    gl.uniform2f(U.u_julia, state.juliaRe, state.juliaIm);
+    gl.uniform1i(U.u_palette, state.palette);
+    gl.uniform1f(U.u_palettePeriod, state.palettePeriod);
+
+    let offset = state.paletteOffset;
+    if (state.colorCycling) {
+        offset += cycleTime;
+    }
+    gl.uniform1f(U.u_paletteOffset, offset);
+    gl.uniform1i(U.u_interiorColor, state.interiorColor);
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.finish();
+    lastRenderTime = (performance.now() - t0).toFixed(1);
+    updateInfo();
+}
+
+// ===================== ANIMATION LOOP =====================
+let lastFrameTime = 0;
+function animate(timestamp) {
+    requestAnimationFrame(animate);
+    if (state.colorCycling) {
+        const dt = (timestamp - lastFrameTime) / 1000;
+        cycleTime += dt * state.cycleSpeed * 0.1;
+        needsRender = true;
+    }
+    lastFrameTime = timestamp;
+    if (needsRender) {
+        render();
+        needsRender = false;
+    }
+}
+requestAnimationFrame(animate);
+
+// ===================== INFO BAR =====================
+function updateInfo() {
+    document.getElementById('info-re').textContent = state.centerX.toPrecision(10);
+    document.getElementById('info-im').textContent = state.centerY.toPrecision(10);
+    const zoomLevel = 3.0 / state.zoom;
+    document.getElementById('info-zoom').textContent = zoomLevel >= 1000
+        ? zoomLevel.toExponential(2) + 'x' : zoomLevel.toFixed(1) + 'x';
+    document.getElementById('info-iter').textContent = state.maxIter;
+    document.getElementById('info-time').textContent = lastRenderTime;
+}
+
+// ===================== COORDINATE CONVERSION =====================
+function pixelToComplex(px, py) {
+    const aspect = canvas.width / canvas.height;
+    const re = state.centerX + (px / canvas.width - 0.5) * state.zoom * aspect;
+    const im = state.centerY - (py / canvas.height - 0.5) * state.zoom; // flip Y
+    return [re, im];
+}
+
+// ===================== HISTORY =====================
+function pushHistory() {
+    history.push({
+        centerX: state.centerX, centerY: state.centerY, zoom: state.zoom,
+        maxIter: state.maxIter, fractalType: state.fractalType,
+        power: state.power, juliaRe: state.juliaRe, juliaIm: state.juliaIm,
+    });
+    if (history.length > 50) history.shift();
+}
+
+function popHistory() {
+    if (history.length === 0) return;
+    const h = history.pop();
+    Object.assign(state, h);
+    syncUI();
+    needsRender = true;
+}
+
+// ===================== MOUSE INTERACTION =====================
+const selBox = document.getElementById('selection-box');
+let dragStart = null;
+let isDragging = false;
+let isPanning = false;
+let panStart = null;
+let panCenterStart = null;
+
+canvas.addEventListener('mousedown', e => {
+    const dpr = window.devicePixelRatio || 1;
+    const px = e.clientX * dpr;
+    const py = (canvas.height / dpr - e.clientY) * dpr; // flip for GL coords
+
+    if (e.button === 2) {
+        // Right-click: zoom out
+        e.preventDefault();
+        pushHistory();
+        const [re, im] = pixelToComplex(e.clientX * dpr, (canvas.height / dpr - e.clientY) * dpr);
+        state.centerX = state.centerX + (re - state.centerX) * -0.5;
+        state.centerY = state.centerY + (im - state.centerY) * -0.5;
+        state.zoom *= 3;
+        autoAdjustIter();
+        needsRender = true;
+        return;
+    }
+
+    if (e.shiftKey) {
+        // Shift+drag: pan
+        isPanning = true;
+        panStart = { x: e.clientX, y: e.clientY };
+        panCenterStart = { x: state.centerX, y: state.centerY };
+        canvas.style.cursor = 'grabbing';
+        return;
+    }
+
+    // Check Julia pick mode
+    if (state.fractalType !== 1 && document.getElementById('julia-pick').checked) {
+        const [re, im] = pixelToComplex(e.clientX * dpr, (canvas.height / dpr - e.clientY) * dpr);
+        state.juliaRe = re;
+        state.juliaIm = im;
+        state.fractalType = 1;
+        pushHistory();
+        state.centerX = 0; state.centerY = 0; state.zoom = 3.2;
+        syncUI();
+        needsRender = true;
+        return;
+    }
+
+    // Start rectangle selection
+    dragStart = { x: e.clientX, y: e.clientY };
+    isDragging = false;
+});
+
+canvas.addEventListener('mousemove', e => {
+    const dpr = window.devicePixelRatio || 1;
+
+    // Update cursor position info
+    const [cre, cim] = pixelToComplex(e.clientX * dpr, (canvas.height / dpr - e.clientY) * dpr);
+    document.getElementById('info-cursor').textContent =
+        cre.toPrecision(8) + (cim >= 0 ? '+' : '') + cim.toPrecision(8) + 'i';
+
+    if (isPanning && panStart) {
+        const aspect = canvas.width / canvas.height;
+        const dx = (e.clientX - panStart.x) / (canvas.width / dpr) * state.zoom * aspect;
+        const dy = (e.clientY - panStart.y) / (canvas.height / dpr) * state.zoom;
+        state.centerX = panCenterStart.x - dx;
+        state.centerY = panCenterStart.y + dy;
+        needsRender = true;
+        return;
+    }
+
+    if (!dragStart) return;
+
+    const dx = Math.abs(e.clientX - dragStart.x);
+    const dy = Math.abs(e.clientY - dragStart.y);
+    if (dx + dy > 6) isDragging = true;
+
+    if (isDragging) {
+        // Draw selection rectangle, constrained to canvas aspect ratio
+        const aspect = window.innerWidth / window.innerHeight;
+        let w = e.clientX - dragStart.x;
+        let h = e.clientY - dragStart.y;
+
+        // Maintain aspect ratio
+        const absW = Math.abs(w);
+        const absH = Math.abs(h);
+        if (absW / aspect > absH) {
+            h = Math.sign(h || 1) * absW / aspect;
+        } else {
+            w = Math.sign(w || 1) * absH * aspect;
+        }
+
+        const left = Math.min(dragStart.x, dragStart.x + w);
+        const top = Math.min(dragStart.y, dragStart.y + h);
+        selBox.style.display = 'block';
+        selBox.style.left = left + 'px';
+        selBox.style.top = top + 'px';
+        selBox.style.width = Math.abs(w) + 'px';
+        selBox.style.height = Math.abs(h) + 'px';
+    }
+});
+
+canvas.addEventListener('mouseup', e => {
+    if (isPanning) {
+        isPanning = false;
+        panStart = null;
+        canvas.style.cursor = 'crosshair';
+        pushHistory();
+        return;
+    }
+
+    selBox.style.display = 'none';
+
+    if (isDragging && dragStart) {
+        const dpr = window.devicePixelRatio || 1;
+        const aspect = window.innerWidth / window.innerHeight;
+        let w = e.clientX - dragStart.x;
+        let h = e.clientY - dragStart.y;
+        const absW = Math.abs(w);
+        const absH = Math.abs(h);
+        if (absW / aspect > absH) {
+            h = Math.sign(h || 1) * absW / aspect;
+        } else {
+            w = Math.sign(w || 1) * absH * aspect;
+        }
+
+        if (Math.abs(w) > 10 && Math.abs(h) > 10) {
+            pushHistory();
+            const x1 = dragStart.x * dpr;
+            const y1 = (canvas.height / dpr - dragStart.y) * dpr;
+            const x2 = (dragStart.x + w) * dpr;
+            const y2 = (canvas.height / dpr - (dragStart.y + h)) * dpr;
+
+            const [re1, im1] = pixelToComplex(x1, y1);
+            const [re2, im2] = pixelToComplex(x2, y2);
+
+            state.centerX = (re1 + re2) / 2;
+            state.centerY = (im1 + im2) / 2;
+            state.zoom = Math.abs(re2 - re1) / (canvas.width / canvas.height);
+            if (state.zoom < 1e-13) state.zoom = 1e-13;
+
+            autoAdjustIter();
+            needsRender = true;
+        }
+    }
+
+    dragStart = null;
+    isDragging = false;
+});
+
+canvas.addEventListener('dblclick', e => {
+    e.preventDefault();
+    pushHistory();
+    const dpr = window.devicePixelRatio || 1;
+    const [re, im] = pixelToComplex(e.clientX * dpr, (canvas.height / dpr - e.clientY) * dpr);
+    state.centerX = re;
+    state.centerY = im;
+    state.zoom /= 3;
+    autoAdjustIter();
+    needsRender = true;
+});
+
+canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const dpr = window.devicePixelRatio || 1;
+    const [re, im] = pixelToComplex(e.clientX * dpr, (canvas.height / dpr - e.clientY) * dpr);
+
+    const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
+
+    // Zoom toward cursor
+    state.centerX += (re - state.centerX) * (1 - factor);
+    state.centerY += (im - state.centerY) * (1 - factor);
+    state.zoom *= factor;
+    if (state.zoom < 1e-13) state.zoom = 1e-13;
+    if (state.zoom > 20) state.zoom = 20;
+
+    autoAdjustIter();
+    needsRender = true;
+}, { passive: false });
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ===================== AUTO ITERATIONS =====================
+function autoAdjustIter() {
+    if (!state.autoIter) return;
+    const zoomLevel = 3.0 / state.zoom;
+    const suggested = Math.max(200, Math.min(4000, Math.floor(200 + 150 * Math.log10(zoomLevel + 1))));
+    if (suggested > state.maxIter) {
+        state.maxIter = suggested;
+        document.getElementById('max-iter').value = state.maxIter;
+        document.getElementById('max-iter-val').textContent = state.maxIter;
+    }
+}
+
+// ===================== UI SYNC =====================
+function syncUI() {
+    document.getElementById('fractal-type').value = state.fractalType;
+    document.getElementById('power').value = state.power;
+    document.getElementById('power-val').textContent = state.power.toFixed(1);
+    document.getElementById('power-row').style.display = state.fractalType == 7 ? '' : 'none';
+    document.getElementById('julia-params').style.display = state.fractalType == 1 ? '' : 'none';
+    document.getElementById('julia-re').value = state.juliaRe;
+    document.getElementById('julia-im').value = state.juliaIm;
+    document.getElementById('max-iter').value = state.maxIter;
+    document.getElementById('max-iter-val').textContent = state.maxIter;
+    document.getElementById('palette').value = state.palette;
+    document.getElementById('palette-period').value = state.palettePeriod;
+    document.getElementById('palette-period-val').textContent = state.palettePeriod;
+    document.getElementById('palette-offset').value = state.paletteOffset;
+    document.getElementById('palette-offset-val').textContent = state.paletteOffset.toFixed(2);
+    document.getElementById('color-cycle').checked = state.colorCycling;
+    document.getElementById('cycle-speed').value = state.cycleSpeed;
+    document.getElementById('cycle-speed-val').textContent = state.cycleSpeed.toFixed(2);
+    document.getElementById('cycle-speed-row').style.display = state.colorCycling ? '' : 'none';
+    document.getElementById('interior-color').value = state.interiorColor;
+    document.getElementById('auto-iter').checked = state.autoIter;
+    document.getElementById('goto-re').value = state.centerX;
+    document.getElementById('goto-im').value = state.centerY;
+    document.getElementById('goto-zoom').value = (3.0 / state.zoom).toFixed(2);
+}
+
+// ===================== UI EVENT HANDLERS =====================
+document.getElementById('fractal-type').addEventListener('change', e => {
+    pushHistory();
+    state.fractalType = parseInt(e.target.value);
+    document.getElementById('power-row').style.display = state.fractalType == 7 ? '' : 'none';
+    document.getElementById('julia-params').style.display = state.fractalType == 1 ? '' : 'none';
+    needsRender = true;
+});
+
+document.getElementById('power').addEventListener('input', e => {
+    state.power = parseFloat(e.target.value);
+    document.getElementById('power-val').textContent = state.power.toFixed(1);
+    needsRender = true;
+});
+
+document.getElementById('julia-re').addEventListener('change', e => {
+    state.juliaRe = parseFloat(e.target.value);
+    needsRender = true;
+});
+
+document.getElementById('julia-im').addEventListener('change', e => {
+    state.juliaIm = parseFloat(e.target.value);
+    needsRender = true;
+});
+
+document.getElementById('max-iter').addEventListener('input', e => {
+    state.maxIter = parseInt(e.target.value);
+    document.getElementById('max-iter-val').textContent = state.maxIter;
+    needsRender = true;
+});
+
+document.getElementById('auto-iter').addEventListener('change', e => {
+    state.autoIter = e.target.checked;
+});
+
+document.getElementById('palette').addEventListener('change', e => {
+    state.palette = parseInt(e.target.value);
+    needsRender = true;
+});
+
+document.getElementById('palette-period').addEventListener('input', e => {
+    state.palettePeriod = parseInt(e.target.value);
+    document.getElementById('palette-period-val').textContent = state.palettePeriod;
+    needsRender = true;
+});
+
+document.getElementById('palette-offset').addEventListener('input', e => {
+    state.paletteOffset = parseFloat(e.target.value);
+    document.getElementById('palette-offset-val').textContent = state.paletteOffset.toFixed(2);
+    needsRender = true;
+});
+
+document.getElementById('color-cycle').addEventListener('change', e => {
+    state.colorCycling = e.target.checked;
+    document.getElementById('cycle-speed-row').style.display = state.colorCycling ? '' : 'none';
+    needsRender = true;
+});
+
+document.getElementById('cycle-speed').addEventListener('input', e => {
+    state.cycleSpeed = parseFloat(e.target.value);
+    document.getElementById('cycle-speed-val').textContent = state.cycleSpeed.toFixed(2);
+});
+
+document.getElementById('interior-color').addEventListener('change', e => {
+    state.interiorColor = parseInt(e.target.value);
+    needsRender = true;
+});
+
+document.getElementById('toggle-panel').addEventListener('click', () => {
+    document.getElementById('panel').classList.toggle('hidden');
+});
+
+document.getElementById('btn-back').addEventListener('click', popHistory);
+
+document.getElementById('btn-home').addEventListener('click', () => {
+    pushHistory();
+    state.centerX = -0.5; state.centerY = 0; state.zoom = 3.0; state.maxIter = 300;
+    state.fractalType = 0;
+    syncUI();
+    needsRender = true;
+});
+
+document.getElementById('btn-save').addEventListener('click', () => {
+    render(); // ensure latest
+    const link = document.createElement('a');
+    link.download = `fractal_${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+});
+
+document.getElementById('btn-share').addEventListener('click', () => {
+    const params = new URLSearchParams({
+        cx: state.centerX, cy: state.centerY, z: state.zoom,
+        i: state.maxIter, t: state.fractalType, p: state.palette,
+        pp: state.palettePeriod, po: state.paletteOffset.toFixed(4),
+        pw: state.power,
+    });
+    if (state.fractalType === 1) {
+        params.set('jre', state.juliaRe);
+        params.set('jim', state.juliaIm);
+    }
+    const url = window.location.origin + window.location.pathname + '?' + params.toString();
+    navigator.clipboard.writeText(url).then(() => {
+        const btn = document.getElementById('btn-share');
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy URL', 1500);
+    });
+});
+
+document.getElementById('btn-help').addEventListener('click', () => {
+    document.getElementById('help-overlay').classList.toggle('hidden');
+});
+
+document.getElementById('btn-goto').addEventListener('click', () => {
+    pushHistory();
+    state.centerX = parseFloat(document.getElementById('goto-re').value) || 0;
+    state.centerY = parseFloat(document.getElementById('goto-im').value) || 0;
+    const zl = parseFloat(document.getElementById('goto-zoom').value) || 1;
+    state.zoom = 3.0 / zl;
+    needsRender = true;
+});
+
+// Preset buttons
+document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const p = presets[btn.dataset.preset];
+        if (!p) return;
+        pushHistory();
+        state.centerX = p.centerX;
+        state.centerY = p.centerY;
+        state.zoom = p.zoom;
+        state.fractalType = p.type;
+        if (p.iter) state.maxIter = p.iter;
+        if (p.juliaRe !== undefined) state.juliaRe = p.juliaRe;
+        if (p.juliaIm !== undefined) state.juliaIm = p.juliaIm;
+        syncUI();
+        needsRender = true;
+    });
+});
+
+// ===================== KEYBOARD SHORTCUTS =====================
+document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    const key = e.key.toLowerCase();
+
+    if (key === 'h') {
+        document.getElementById('help-overlay').classList.toggle('hidden');
+    } else if (key === 'p') {
+        document.getElementById('panel').classList.toggle('hidden');
+    } else if (key === 'c') {
+        state.colorCycling = !state.colorCycling;
+        syncUI();
+        needsRender = true;
+    } else if (key === 'r') {
+        pushHistory();
+        state.centerX = -0.5; state.centerY = 0; state.zoom = 3.0; state.maxIter = 300;
+        state.fractalType = 0;
+        syncUI();
+        needsRender = true;
+    } else if (key === 'b') {
+        popHistory();
+    } else if (key === 's' && !e.ctrlKey && !e.metaKey) {
+        document.getElementById('btn-save').click();
+    } else if (key === '=' || key === '+') {
+        state.maxIter = Math.min(4000, state.maxIter + 50);
+        syncUI();
+        needsRender = true;
+    } else if (key === '-') {
+        state.maxIter = Math.max(50, state.maxIter - 50);
+        syncUI();
+        needsRender = true;
+    } else if (key === 'arrowleft') {
+        pushHistory();
+        state.centerX -= state.zoom * 0.1;
+        needsRender = true;
+    } else if (key === 'arrowright') {
+        pushHistory();
+        state.centerX += state.zoom * 0.1;
+        needsRender = true;
+    } else if (key === 'arrowup') {
+        pushHistory();
+        state.centerY += state.zoom * 0.1;
+        needsRender = true;
+    } else if (key === 'arrowdown') {
+        pushHistory();
+        state.centerY -= state.zoom * 0.1;
+        needsRender = true;
+    } else if (key === '[') {
+        state.paletteOffset = (state.paletteOffset - 0.02 + 1) % 1;
+        syncUI();
+        needsRender = true;
+    } else if (key === ']') {
+        state.paletteOffset = (state.paletteOffset + 0.02) % 1;
+        syncUI();
+        needsRender = true;
+    } else if (key >= '1' && key <= '8') {
+        pushHistory();
+        state.fractalType = parseInt(key) - 1;
+        syncUI();
+        needsRender = true;
+    }
+});
+
+// ===================== URL PARAMS =====================
+function loadFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('cx')) state.centerX = parseFloat(params.get('cx'));
+    if (params.has('cy')) state.centerY = parseFloat(params.get('cy'));
+    if (params.has('z')) state.zoom = parseFloat(params.get('z'));
+    if (params.has('i')) state.maxIter = parseInt(params.get('i'));
+    if (params.has('t')) state.fractalType = parseInt(params.get('t'));
+    if (params.has('p')) state.palette = parseInt(params.get('p'));
+    if (params.has('pp')) state.palettePeriod = parseInt(params.get('pp'));
+    if (params.has('po')) state.paletteOffset = parseFloat(params.get('po'));
+    if (params.has('pw')) state.power = parseFloat(params.get('pw'));
+    if (params.has('jre')) state.juliaRe = parseFloat(params.get('jre'));
+    if (params.has('jim')) state.juliaIm = parseFloat(params.get('jim'));
+    syncUI();
+}
+
+// ===================== TOUCH SUPPORT =====================
+let touchStart = null;
+let touchDist = null;
+let touchCenter = null;
+
+canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+        touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else if (e.touches.length === 2) {
+        // Pinch zoom
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        touchDist = Math.sqrt(dx * dx + dy * dy);
+        touchCenter = {
+            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+        };
+        panCenterStart = { x: state.centerX, y: state.centerY };
+    }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (e.touches.length === 1 && touchStart) {
+        const dpr = window.devicePixelRatio || 1;
+        const aspect = canvas.width / canvas.height;
+        const dx = (e.touches[0].clientX - touchStart.x) / (canvas.width / dpr) * state.zoom * aspect;
+        const dy = (e.touches[0].clientY - touchStart.y) / (canvas.height / dpr) * state.zoom;
+        state.centerX -= dx;
+        state.centerY += dy;
+        touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        needsRender = true;
+    } else if (e.touches.length === 2 && touchDist) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        const newDist = Math.sqrt(dx * dx + dy * dy);
+        const scale = touchDist / newDist;
+        state.zoom *= scale;
+        if (state.zoom < 1e-13) state.zoom = 1e-13;
+        if (state.zoom > 20) state.zoom = 20;
+        touchDist = newDist;
+        autoAdjustIter();
+        needsRender = true;
+    }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+    touchStart = null;
+    touchDist = null;
+    touchCenter = null;
+    pushHistory();
+});
+
+// ===================== INIT =====================
+loadFromURL();
+syncUI();
+needsRender = true;
+</script>
+</body>
+</html>
