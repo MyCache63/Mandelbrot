@@ -88,6 +88,34 @@ button:hover { background: rgba(255,255,255,0.15); }
   padding: 4px 8px; font-size: 11px; margin: 2px;
 }
 #presets-grid { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+#save-overlay {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.85); z-index: 200; display: flex;
+  align-items: center; justify-content: center;
+}
+#save-overlay.hidden { display: none; }
+#save-box {
+  background: #1a1a24; border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 12px; padding: 24px 28px; width: 380px; max-width: 90vw;
+}
+#save-box h2 { margin-bottom: 14px; color: #e0e0e0; font-size: 16px; }
+#save-box label { margin-bottom: 4px; }
+#save-box input[type="text"] {
+  width: 100%; padding: 8px 10px; background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.2); border-radius: 4px;
+  color: #e0e0e0; font-size: 14px; margin-bottom: 12px;
+}
+#save-box input[type="text"]:focus { outline: none; border-color: rgba(100,140,255,0.6); }
+#save-box .save-actions { display: flex; gap: 8px; margin-top: 8px; }
+#save-box .save-actions button { flex: 1; padding: 8px; }
+.save-primary { background: rgba(60,100,220,0.3) !important; border-color: rgba(100,140,255,0.4) !important; }
+.save-primary:hover { background: rgba(60,100,220,0.5) !important; }
+#saved-brot-row {
+  display: flex; gap: 4px; align-items: center; margin-bottom: 6px;
+}
+#saved-brot-row select { flex: 1; margin-bottom: 0; }
+#saved-brot-row button { padding: 5px 8px; font-size: 11px; min-width: 28px; }
+.saved-meta { font-size: 10px; color: #666; margin-bottom: 8px; font-style: italic; }
 </style>
 </head>
 <body>
@@ -181,14 +209,39 @@ button:hover { background: rgba(255,255,255,0.15); }
   </div>
 
   <div class="section">
+    <div class="section-title">Screenshot &amp; Save</div>
+    <div class="btn-row">
+      <button id="btn-save">Save PNG</button>
+      <button id="btn-save-brot" class="save-primary">Save Brot</button>
+    </div>
+    <div class="btn-row">
+      <button id="btn-share">Copy URL</button>
+      <button id="btn-import-json">Import JSON</button>
+    </div>
+    <input type="file" id="json-file-input" accept=".json" style="display:none">
+  </div>
+
+  <div class="section">
+    <div class="section-title">Saved Brots</div>
+    <div id="saved-brot-row">
+      <select id="saved-brots-select">
+        <option value="">-- Select a saved view --</option>
+      </select>
+      <button id="btn-load-brot" title="Load">Go</button>
+      <button id="btn-delete-brot" title="Delete">X</button>
+    </div>
+    <div class="saved-meta" id="saved-brot-info"></div>
+    <div class="btn-row">
+      <button id="btn-export-json">Export JSON</button>
+      <button id="btn-export-all">Export All</button>
+    </div>
+  </div>
+
+  <div class="section">
     <div class="section-title">Navigation</div>
     <div class="btn-row">
       <button id="btn-back" title="Go back">&#9664; Back</button>
       <button id="btn-home" title="Reset view">&#8962; Home</button>
-    </div>
-    <div class="btn-row">
-      <button id="btn-save">Save PNG</button>
-      <button id="btn-share">Copy URL</button>
     </div>
     <button id="btn-help" style="width:100%">Keyboard Shortcuts &amp; Help</button>
   </div>
@@ -227,6 +280,22 @@ button:hover { background: rgba(255,255,255,0.15); }
   <span>Iter: <span class="val" id="info-iter">300</span></span>
   <span>Render: <span class="val" id="info-time">--</span>ms</span>
   <span>Cursor: <span class="val" id="info-cursor">--</span></span>
+</div>
+
+<div id="save-overlay" class="hidden">
+  <div id="save-box">
+    <h2>Save This View</h2>
+    <label>Name</label>
+    <input type="text" id="save-name" placeholder="e.g. Deep Seahorse Spiral" maxlength="60">
+    <div class="checkbox-row">
+      <input type="checkbox" id="save-png-too" checked>
+      <label for="save-png-too">Also save PNG screenshot</label>
+    </div>
+    <div class="save-actions">
+      <button id="btn-save-confirm" class="save-primary">Save</button>
+      <button id="btn-save-cancel">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <div id="help-overlay" class="hidden">
@@ -1074,9 +1143,257 @@ canvas.addEventListener('touchend', e => {
     pushHistory();
 });
 
+// ===================== SAVED BROTS (localStorage) =====================
+const STORAGE_KEY = 'fractalExplorer_savedBrots';
+const fractalTypeNames = ['Mandelbrot','Julia Set','Burning Ship','Tricorn','Celtic','Buffalo','Perp. Mandelbrot','Multibrot'];
+const paletteNames = ['Ocean Blues','Fire','Psychedelic','Ice','Gold & Blue','Neon','Grayscale','Emerald','Sunset','Vaporwave'];
+
+function getSavedBrots() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+    catch { return []; }
+}
+
+function saveBrots(brots) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(brots));
+}
+
+function buildBrotData(name) {
+    return {
+        name: name,
+        savedAt: new Date().toISOString(),
+        fractalType: state.fractalType,
+        fractalTypeName: fractalTypeNames[state.fractalType] || 'Unknown',
+        centerX: state.centerX,
+        centerY: state.centerY,
+        zoom: state.zoom,
+        zoomLevel: +(3.0 / state.zoom).toPrecision(6),
+        maxIter: state.maxIter,
+        palette: state.palette,
+        paletteName: paletteNames[state.palette] || 'Unknown',
+        palettePeriod: state.palettePeriod,
+        paletteOffset: state.paletteOffset,
+        interiorColor: state.interiorColor,
+        power: state.power,
+        juliaRe: state.juliaRe,
+        juliaIm: state.juliaIm,
+    };
+}
+
+function loadBrotData(brot) {
+    pushHistory();
+    state.centerX = brot.centerX;
+    state.centerY = brot.centerY;
+    state.zoom = brot.zoom;
+    state.maxIter = brot.maxIter;
+    state.fractalType = brot.fractalType;
+    state.palette = brot.palette;
+    state.palettePeriod = brot.palettePeriod;
+    state.paletteOffset = brot.paletteOffset;
+    state.interiorColor = brot.interiorColor;
+    state.power = brot.power;
+    if (brot.juliaRe !== undefined) state.juliaRe = brot.juliaRe;
+    if (brot.juliaIm !== undefined) state.juliaIm = brot.juliaIm;
+    syncUI();
+    needsRender = true;
+}
+
+function refreshSavedBrotsDropdown() {
+    const sel = document.getElementById('saved-brots-select');
+    const brots = getSavedBrots();
+    sel.innerHTML = '<option value="">-- Select a saved view --</option>';
+    brots.forEach((b, i) => {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = b.name;
+        sel.appendChild(opt);
+    });
+    document.getElementById('saved-brot-info').textContent = '';
+}
+
+// Show info when a saved brot is selected
+document.getElementById('saved-brots-select').addEventListener('change', e => {
+    const idx = e.target.value;
+    const info = document.getElementById('saved-brot-info');
+    if (idx === '') { info.textContent = ''; return; }
+    const brots = getSavedBrots();
+    const b = brots[idx];
+    if (!b) return;
+    const zl = (3.0 / b.zoom);
+    const zlStr = zl >= 1000 ? zl.toExponential(2) + 'x' : zl.toFixed(1) + 'x';
+    const date = new Date(b.savedAt).toLocaleDateString();
+    info.textContent = `${b.fractalTypeName || ''} | ${b.paletteName || ''} | Zoom: ${zlStr} | ${date}`;
+});
+
+// Save Brot button -> open dialog
+document.getElementById('btn-save-brot').addEventListener('click', () => {
+    document.getElementById('save-name').value = '';
+    document.getElementById('save-overlay').classList.remove('hidden');
+    setTimeout(() => document.getElementById('save-name').focus(), 100);
+});
+
+document.getElementById('btn-save-cancel').addEventListener('click', () => {
+    document.getElementById('save-overlay').classList.add('hidden');
+});
+
+// Allow Enter to confirm save
+document.getElementById('save-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btn-save-confirm').click();
+    if (e.key === 'Escape') document.getElementById('btn-save-cancel').click();
+});
+
+document.getElementById('btn-save-confirm').addEventListener('click', () => {
+    let name = document.getElementById('save-name').value.trim();
+    if (!name) name = 'Untitled ' + new Date().toLocaleTimeString();
+
+    const brot = buildBrotData(name);
+    const brots = getSavedBrots();
+    brots.push(brot);
+    saveBrots(brots);
+    refreshSavedBrotsDropdown();
+
+    // Also save PNG if checked
+    if (document.getElementById('save-png-too').checked) {
+        render();
+        const link = document.createElement('a');
+        const safeName = name.replace(/[^a-zA-Z0-9_\- ]/g, '').replace(/\s+/g, '_');
+        link.download = `${safeName}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    }
+
+    // Also download JSON
+    const json = JSON.stringify(brot, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const link2 = document.createElement('a');
+    const safeName2 = name.replace(/[^a-zA-Z0-9_\- ]/g, '').replace(/\s+/g, '_');
+    link2.download = `${safeName2}.json`;
+    link2.href = URL.createObjectURL(blob);
+    link2.click();
+    URL.revokeObjectURL(link2.href);
+
+    document.getElementById('save-overlay').classList.add('hidden');
+
+    // Select the newly saved one in dropdown
+    const sel = document.getElementById('saved-brots-select');
+    sel.value = brots.length - 1;
+    sel.dispatchEvent(new Event('change'));
+});
+
+// Load saved brot
+document.getElementById('btn-load-brot').addEventListener('click', () => {
+    const idx = document.getElementById('saved-brots-select').value;
+    if (idx === '') return;
+    const brots = getSavedBrots();
+    if (brots[idx]) loadBrotData(brots[idx]);
+});
+
+// Double-click dropdown entry to load immediately
+document.getElementById('saved-brots-select').addEventListener('dblclick', () => {
+    document.getElementById('btn-load-brot').click();
+});
+
+// Delete saved brot
+document.getElementById('btn-delete-brot').addEventListener('click', () => {
+    const idx = document.getElementById('saved-brots-select').value;
+    if (idx === '') return;
+    const brots = getSavedBrots();
+    const name = brots[idx]?.name || 'this view';
+    if (!confirm(`Delete "${name}"?`)) return;
+    brots.splice(parseInt(idx), 1);
+    saveBrots(brots);
+    refreshSavedBrotsDropdown();
+});
+
+// Export single JSON (currently selected)
+document.getElementById('btn-export-json').addEventListener('click', () => {
+    const idx = document.getElementById('saved-brots-select').value;
+    if (idx === '') {
+        // No selection — export current view
+        const brot = buildBrotData('Current View');
+        const json = JSON.stringify(brot, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.download = 'fractal_view.json';
+        link.href = URL.createObjectURL(blob);
+        link.click();
+        URL.revokeObjectURL(link.href);
+        return;
+    }
+    const brots = getSavedBrots();
+    const brot = brots[idx];
+    if (!brot) return;
+    const json = JSON.stringify(brot, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const link = document.createElement('a');
+    const safeName = brot.name.replace(/[^a-zA-Z0-9_\- ]/g, '').replace(/\s+/g, '_');
+    link.download = `${safeName}.json`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    URL.revokeObjectURL(link.href);
+});
+
+// Export all saved brots as one JSON array
+document.getElementById('btn-export-all').addEventListener('click', () => {
+    const brots = getSavedBrots();
+    if (brots.length === 0) { alert('No saved views to export.'); return; }
+    const json = JSON.stringify(brots, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.download = `all_saved_brots_${Date.now()}.json`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    URL.revokeObjectURL(link.href);
+});
+
+// Import JSON file(s)
+document.getElementById('btn-import-json').addEventListener('click', () => {
+    document.getElementById('json-file-input').click();
+});
+
+document.getElementById('json-file-input').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+        try {
+            const data = JSON.parse(ev.target.result);
+            if (Array.isArray(data)) {
+                // Import array of brots
+                const brots = getSavedBrots();
+                let count = 0;
+                data.forEach(b => {
+                    if (b.centerX !== undefined && b.zoom !== undefined) {
+                        if (!b.name) b.name = 'Imported ' + (count + 1);
+                        brots.push(b);
+                        count++;
+                    }
+                });
+                saveBrots(brots);
+                refreshSavedBrotsDropdown();
+                alert(`Imported ${count} saved view(s).`);
+            } else if (data.centerX !== undefined && data.zoom !== undefined) {
+                // Single brot — load it and also save to collection
+                if (!data.name) data.name = file.name.replace('.json', '');
+                const brots = getSavedBrots();
+                brots.push(data);
+                saveBrots(brots);
+                refreshSavedBrotsDropdown();
+                loadBrotData(data);
+            } else {
+                alert('Unrecognized JSON format.');
+            }
+        } catch (err) {
+            alert('Could not parse JSON: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // reset so same file can be re-imported
+});
+
 // ===================== INIT =====================
 loadFromURL();
 syncUI();
+refreshSavedBrotsDropdown();
 needsRender = true;
 </script>
 </body>
